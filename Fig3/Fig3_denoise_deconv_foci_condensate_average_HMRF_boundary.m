@@ -13,7 +13,7 @@
 clc;close all;clear;rng(42);
 %% Denoising and Deconvolution parameter
 % Pre-trained N2V network for OCT4/BRD4 live-SR data
-onnx_path = '..\onnx\N2V_2D_LiveSR_125_1_E10_xy3z0.onnx';
+onnx_path = '..\onnx\N2V_2D_OCT4_BRD4_liveSR_125_1_E10_xy3z0.onnx';
 is_GPU_avaliable = true;
 
 % Initialize Network and extract patching requirements

@@ -1,4 +1,22 @@
 function [HMRFseg, settings] = HMRFseg4img(img, nucleus_mask, nclust, beta0, mineps)
+    % HMRFseg4img - Hidden Markov Random Field segmentation for nuclear images
+    %
+    % This code is adapted from:
+    % Schmid et al., "Quantitative analyses of the 3D nuclear landscape 
+    % recorded with super-resolved fluorescence microscopy"
+    %
+    % INPUTS:
+    %   img          - 2D image to be segmented
+    %   nucleus_mask - binary mask of the nucleus
+    %   nclust       - desired number of classes/clusters
+    %   beta0        - HMRF smoothing parameter
+    %   mineps       - convergence threshold for mean updates
+    %
+    % OUTPUTS:
+    %   HMRFseg      - structure containing segmentation results:
+    %                  img, img_class, nucleus_mask, mu, sigma, a_counts
+    %   settings     - structure containing parameters used in segmentation
+
     % ----------------------- parameters settings -------------------------
     img = double(img);
     nucleus_mask = logical(nucleus_mask); mask = nucleus_mask(:);
