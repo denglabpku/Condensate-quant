@@ -66,9 +66,9 @@ function [dist_p2boundary, dist_p2centroid, dist_boundary2centroid] = getDist2In
 
         mask = temp_labels>0;
         if mask(ceil(rc_index(frame_iter, 1)), ceil(rc_index(frame_iter, 2)))
-            dist_p2boundary(frame_iter) = min_pb;
-        else
             dist_p2boundary(frame_iter) = -1*min_pb;
+        else
+            dist_p2boundary(frame_iter) = min_pb;
         end
 
     end

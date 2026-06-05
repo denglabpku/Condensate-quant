@@ -12,8 +12,12 @@
 
 clc;close all;clear;
 %% Denoising and Deconvolution parameter
+script_dir = 'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step3_downstream_analysis\3color-RNA-2Condensate';
+repo_root = fullfile(script_dir, '..', '..');
+addpath(genpath(fullfile(repo_root, 'Function')));
+
 % Pre-trained N2V network for OCT4/BRD4 live-SR data
-onnx_path = '..\onnx\N2V_2D_OCT4_BRD4_liveSR_125_1_E10_xy3z0.onnx';
+onnx_path = fullfile(repo_root, 'onnx', 'N2V_2D_OCT4_BRD4_liveSR_125_1_E10_xy3z0.onnx');
 is_GPU_avaliable = true;
 
 % Initialize Network and extract patching requirements
@@ -26,34 +30,39 @@ disp('Load deep-learning denoising model complete!');
 disp(['Input image size: H=', num2str(patch_h), '; W=', num2str(patch_w), '; T=', num2str(patch_t), '.']);
 
 % Load Point Spread Function (PSF) for multi-channel deconvolution
-psf_SR_488 = TIFFreader('..\PSF\psf_SR_channel488_2D.tif', 'double');
-psf_SR_560 = TIFFreader('..\PSF\psf_SR_channel561_2D.tif', 'double');
-psf_SR_640 = TIFFreader('..\PSF\psf_SR_channel642_2D.tif', 'double');
+psf_SR_488 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel488_2D.tif'), 'double');
+psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 'double');
+psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 'double');
 
 %% data loading & pre-processing
-filepath_list = {''};
+filepath_list = {script_dir};
 
 for filepath_iter = 1:length(filepath_list)
 
 filepath = filepath_list{filepath_iter};
 output_path = filepath;
 
-filename_list = dir([filepath, '*.tif']);
+filename_list = dir(fullfile(filepath, '*.tif'));
 
 pixelSize = 95;      % Physical pixel size in nanometers (nm)
 resize_factor = 10;  % Sub-pixel interpolation factor for morphological precision
+min_radius = 50; % nm
+min_pixel_num = min_radius^2*pi/(pixelSize/resize_factor)^2;
+min_partition_coefficient = [1, 1];
 roi_width = 31;
 
 for file_iter = 1:length(filename_list)
 
     filename = filename_list(file_iter).name;
-    mkdir([output_path, filename(1:(end-4))]);
+    filename_base = filename(1:(end-4));
+    sample_output_dir = fullfile(output_path, filename_base);
+    mkdir(sample_output_dir);
     disp(['Processing ', filename, ' ...']);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%% read img sequence %%%%%%%%%%%%%%%%%%%%%%%%%%
 
     % Use Bio-Formats to import OME-TIFF metadata
-    r = bfGetReader([filepath, filename]);
+    r = bfGetReader(fullfile(filepath, filename));
     omeMeta = r.getMetadataStore();
     
     sizeX = r.getSizeX();
@@ -147,7 +156,7 @@ for file_iter = 1:length(filename_list)
     img_stack_reconv(:, :, :, 3, :) = img_reconv;
 
     % export denoised and deconvolved image stacks
-    bfsave(uint16(img_stack_reconv), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-denoised.ome.tif']);
+    bfsave(uint16(img_stack_reconv), fullfile(sample_output_dir, [filename_base, '-denoised.ome.tif']));
     img_stack_deconv(:, :, :, 1, :) = double(img_stack_denoised(:, :, :, 1, :));
 
     channel_488 = squeeze(img_stack_deconv(:, :, :, 1, :));
@@ -175,7 +184,7 @@ for file_iter = 1:length(filename_list)
 
     spots_488_3D = spots_488;
 
-    save([output_path, filename(1:(end-4)), '.mat'], "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
+    save(fullfile(output_path, [filename_base, '.mat']), "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
     nucleus_mask = repmat(nucleus_mask, 1, 1, numberOfPages);
     
     %% dealing with foci channel
@@ -237,8 +246,8 @@ for file_iter = 1:length(filename_list)
             img_center(row1:row2, col1:col2, frame_iter) = reshape(temp_mask(temp_roi_resize), [row2-row1+1, col2-col1+1]);
         end
         img_processed_roi_export = imresize(img_processed_roi, 1/resize_factor, "nearest");
-        TIFwriter(uint16(img_processed_roi_export), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '.tif']);
-        TIFwriter(uint8(img_center), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-Center-roi.tif'], 'lzw');
+        TIFwriter(uint16(img_processed_roi_export), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '.tif']));
+        TIFwriter(uint8(img_center), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-Center-roi.tif']), 'lzw');
     
         % important parameter: rc_index, bw, intensity
         foci_result(c_iter).rna_bkg = rna_bkg;
@@ -246,7 +255,7 @@ for file_iter = 1:length(filename_list)
         foci_result(c_iter).intensity = intensity;
     end
     
-    save([output_path, filename(1:(end-4)), '.mat'], "foci_result", "roi_window", '-append');
+    save(fullfile(output_path, [filename_base, '.mat']), "foci_result", "roi_window", '-append');
 
 %% dealing with condensate channel
 condensate_result = struct; 
@@ -294,6 +303,13 @@ for c_iter = 2:3 % OCT4 and BRD4 channel
         end
         CDcenter(row1:row2, col1:col2, frame_iter) = reshape(temp_CDcenter(temp_roi_resize), [row2-row1+1, col2-col1+1]);    
         CDinterface(:, :, frame_iter) = getCDinterface(img_processed_bicubic_roi(:, :, frame_iter), bw_local, 0);
+        [~, temp_labels] = getCDboundary(img_processed_bicubic_roi(:, :, frame_iter), bw_local, CDcenter(:, :, frame_iter), CDinterface(:, :, frame_iter), 0);
+
+        % Filter condensates by area and enrichment.
+        [temp_labels, stats] = filter_condensates_Area_PC(temp_labels, img_processed_bicubic_roi(:, :, frame_iter), min_pixel_num, min_partition_coefficient(c_iter-1), resize_factor);
+        bw_local = temp_labels>0;
+        CDcenter(:, :, frame_iter) = CDcenter(:, :, frame_iter) & bw_local;
+        CDinterface(:, :, frame_iter) = getCDinterface(img_processed_bicubic_roi(:, :, frame_iter), bw_local, 0);
         [temp_CDboundary, temp_labels] = getCDboundary(img_processed_bicubic_roi(:, :, frame_iter), bw_local, CDcenter(:, :, frame_iter), CDinterface(:, :, frame_iter), 0);
         CDboundary(:, :, frame_iter) = temp_CDboundary;
         labels(:, :, frame_iter) = temp_labels;
@@ -323,7 +339,7 @@ for c_iter = 2:3 % OCT4 and BRD4 channel
             end
             axis off
             daspect([1, 1, 1]);
-            print(fig1, [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-HMRFseg.png'], '-dpng');
+            print(fig1, fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-HMRFseg.png']), '-dpng');
             close;
         end
     end
@@ -332,12 +348,12 @@ for c_iter = 2:3 % OCT4 and BRD4 channel
     
     % Export morphological results as TIFF
     img_processed_roi_export = imresize(img_processed_roi, 1/resize_factor, "nearest");
-    TIFwriter(uint16(img_processed_roi_export), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-roi.tif']);
-    TIFwriter(uint16(img_processed_bicubic_roi), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-roi-bicubic.tif']);
-    TIFwriter(uint8(CDcenter), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDcenter.tif'], 'lzw');
-    TIFwriter(uint8(CDinterface), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDinterface.tif'], 'lzw');
-    TIFwriter(uint8(CDboundary), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDboundary.tif'], 'lzw');
-    TIFwriter(uint8(CDmask_export), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDmask.tif']);
+    TIFwriter(uint16(img_processed_roi_export), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-roi.tif']));
+    TIFwriter(uint16(img_processed_bicubic_roi), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-roi-bicubic.tif']));
+    TIFwriter(uint8(CDcenter), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDcenter.tif']), 'lzw');
+    TIFwriter(uint8(CDinterface), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDinterface.tif']), 'lzw');
+    TIFwriter(uint8(CDboundary), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDboundary.tif']), 'lzw');
+    TIFwriter(uint8(CDmask_export), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDmask.tif']));
 
     % Store results in struct
     condensate_result(c_iter).name = channel_labels{c_iter};
@@ -398,7 +414,7 @@ for c_iter = 2:3 % OCT4 and BRD4 channel
 end
 
 % export condensate segmentation result and centroids summary plot
-save([output_path, filename(1:(end-4)), '.mat'], "condensate_result", '-append');
+save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", '-append');
 
 % visualization
 frame_iter = 1;
@@ -428,7 +444,7 @@ plot(spots(:,2), spots(:,1), 'mo', 'MarkerSize',7,'LineWidth',1.2);
 title('BRD4','FontSize',11,'FontWeight','bold')
 hold off
 
-print(fig, [output_path, filesep, filename(1:(end-4)), '.png'], '-dpng');
+print(fig, fullfile(output_path, [filename_base, '.png']), '-dpng');
 
 %%
 close all;

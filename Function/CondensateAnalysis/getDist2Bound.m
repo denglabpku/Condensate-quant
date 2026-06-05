@@ -20,9 +20,9 @@ function dist2bound = getDist2Bound(rc_index, mask, CDboundary)
             [row,col] = ind2sub([h, w],tempLocs);
             [~, dist] = dsearchn([row,col], rc_index(frame_iter, :));
             if mask(round(rc_index(frame_iter, 1)), round(rc_index(frame_iter, 2)), frame_iter)
-                dist2bound(frame_iter) = dist;
-            else
                 dist2bound(frame_iter) = -1*dist;
+            else
+                dist2bound(frame_iter) = dist;
             end
         end
     end

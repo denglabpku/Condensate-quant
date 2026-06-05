@@ -13,9 +13,13 @@
 clc;close all;clear;
 
 %% 1. DENOISING & DECONVOLUTION CONFIGURATION
+script_dir = fileparts(mfilename('fullpath'));
+repo_root = fullfile(script_dir, '..');
+addpath(genpath(fullfile(repo_root, 'Function')));
+
 % Pre-trained N2V network for OCT4/BRD4 live-SR data
-% onnx_path = '..\onnx\N2V_2D_LiveSR_125_1_E10_xy3z0.onnx';
-onnx_path = '../onnx/N2V_3D_OCT4_BRD4_liveSR_125_8_E10_xy3z0.onnx';
+% onnx_path = fullfile(repo_root, 'onnx', 'N2V_2D_LiveSR_125_1_E10_xy3z0.onnx');
+onnx_path = fullfile(repo_root, 'onnx', 'N2V_3D_OCT4_BRD4_liveSR_125_8_E10_xy3z0.onnx');
 is_GPU_avaliable = true;
 use_accelerate = true;
 
@@ -28,12 +32,12 @@ patch_t = inputsize(1);
 disp('Deep-learning model loaded. Initializing GPU-accelerated denoising...');
 
 % Load Point Spread Function (PSF) for 561nm channel deconvolution
-% psf_SR_560 = TIFFreader('..\PSF\psf_SR_channel561_2D.tif', 'double');
-psf_SR_560 = TIFFreader('../PSF/psf_SR_channel561_2D.tif', 'double');
+% psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 'double');
+psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 'double');
 
 
 %% 2. DATA LOADING & PRE-PROCESSING
-filepath_list = {'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step2_deconvolution-segmentation\'};
+filepath_list = {script_dir};
 pixelSize = 95;      % Physical pixel size in nanometers (nm)
 resize_factor = 10;  % Sub-pixel interpolation factor for morphological precision
 min_radius = 50; % nm
@@ -45,18 +49,20 @@ for filepath_iter = 1:length(filepath_list)
 filepath = filepath_list{filepath_iter};
 output_path = filepath;
 
-filename_list = dir([filepath, '*.tif']);
+filename_list = dir(fullfile(filepath, '*.tif'));
 
 for file_iter = 1:length(filename_list)
 
     filename = filename_list(file_iter).name;
-    mkdir([output_path, filename(1:(end-4))]);
+    filename_base = filename(1:(end-4));
+    sample_output_dir = fullfile(output_path, filename_base);
+    mkdir(sample_output_dir);
     disp(['Processing ', filename, ' ...']);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%% read img sequence %%%%%%%%%%%%%%%%%%%%%%%%%%
     
     % Use Bio-Formats to import OME-TIFF metadata
-    r = bfGetReader([filepath, filename]);
+    r = bfGetReader(fullfile(filepath, filename));
     omeMeta = r.getMetadataStore();
     
     sizeX = r.getSizeX();
@@ -138,8 +144,8 @@ for file_iter = 1:length(filename_list)
     % export denoised and deconvolved image stacks
     img_stack_denoised = double(squeeze(img_stack_denoised));
     img_stack_deconv = squeeze(img_stack_deconv);
-    TIFwriter(uint16(img_stack_deconv), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-denoised-deconv.tif']);
-    TIFwriter(uint16(img_stack_denoised), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-denoised.tif']);
+    TIFwriter(uint16(img_stack_deconv), fullfile(sample_output_dir, [filename_base, '-denoised-deconv.tif']));
+    TIFwriter(uint16(img_stack_denoised), fullfile(sample_output_dir, [filename_base, '-denoised.tif']));
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%% nucleus mask %%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% 5. HMRF-BASED CONDENSATE SEGMENTATION
@@ -150,7 +156,7 @@ for file_iter = 1:length(filename_list)
     h = sizeY; w = sizeX;
     numberOfPages = sizeT;
 
-    save([output_path, filename(1:(end-4)), '.mat'], "img_stack_deconv", "nucleus_mask", "resize_factor", "pixelSize");
+    save(fullfile(output_path, [filename_base, '.mat']), "img_stack_deconv", "nucleus_mask", "resize_factor", "pixelSize");
 
     %% dealing with condensate channel
     condensate_result = struct; 
@@ -231,7 +237,7 @@ for file_iter = 1:length(filename_list)
             end
             axis off
             daspect([1, 1, 1]);
-            print(fig1, [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-HMRFseg.png'], '-dpng');
+            print(fig1, fullfile(sample_output_dir, [filename_base, '-HMRFseg.png']), '-dpng');
             close;
         end
     end
@@ -239,10 +245,10 @@ for file_iter = 1:length(filename_list)
     CDmask_export(CDboundary)=255;
     
     % Export morphological results as TIFF
-    TIFwriter(uint8(CDcenter), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-CDcenter.tif'], 'lzw');
-    TIFwriter(uint8(CDinterface), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-CDinterface.tif'], 'lzw');
-    TIFwriter(uint8(CDboundary), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-CDboundary.tif'], 'lzw');
-    TIFwriter(uint8(CDmask_export), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-CDmask.tif']);
+    TIFwriter(uint8(CDcenter), fullfile(sample_output_dir, [filename_base, '-CDcenter.tif']), 'lzw');
+    TIFwriter(uint8(CDinterface), fullfile(sample_output_dir, [filename_base, '-CDinterface.tif']), 'lzw');
+    TIFwriter(uint8(CDboundary), fullfile(sample_output_dir, [filename_base, '-CDboundary.tif']), 'lzw');
+    TIFwriter(uint8(CDmask_export), fullfile(sample_output_dir, [filename_base, '-CDmask.tif']));
     
     % Store results in struct
     condensate_result.CDcenter = CDcenter;
@@ -253,7 +259,7 @@ for file_iter = 1:length(filename_list)
     condensate_result.area = area;
     
     % important parameter: condensate_result
-    save([output_path, filename(1:(end-4)), '.mat'], "condensate_result", '-append');
+    save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", '-append');
 
 end
 
@@ -265,7 +271,7 @@ end
 % Analyzation and visualization from pre-processed data start here
 % No need to re-run previous steps
 
-filepath = '';
+filepath = script_dir;
 output_path = filepath;
 
 condensate_statistics = struct;
@@ -275,7 +281,7 @@ for filepath_iter = 1:2
 
     condensate_name = condensate_label{filepath_iter};
 
-    filename_list = dir([filepath, '*', condensate_name, '*.mat']);
+    filename_list = dir(fullfile(filepath, ['*', condensate_name, '*.mat']));
     condensate_statistics(filepath_iter).name = condensate_name;
 
     pixelSize = 95; %nm
@@ -294,7 +300,7 @@ for filepath_iter = 1:2
     
         filename = filename_list(file_iter).name;
         disp(['Processing ', filename, ' ...']);
-        load([filepath, filename], "condensate_result");
+        load(fullfile(filepath, filename), "condensate_result");
     
         for frame_iter = 1:numberOfPages
     
@@ -321,7 +327,7 @@ for filepath_iter = 1:2
 
 end
 
-save([filepath, 'condensate_statistics.mat'], "condensate_statistics");
+save(fullfile(filepath, 'condensate_statistics.mat'), "condensate_statistics");
 
 
 %% Visualization of morphometric statistics

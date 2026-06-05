@@ -424,6 +424,7 @@ Before running Step 3 scripts, verify:
 - `Cell_with_RNA.txt` and `Cell_without_RNA.txt` contain valid image filenames.
 - `channel_labels` match the actual image channel order.
 - `pixelSize`, `resize_factor`, `roi_width`, `nclust`, and `seg_point` are appropriate for the dataset.
+- `min_radius` and `min_partition_coefficient` are appropriate for condensate filtering. The current Step 3 defaults are `min_radius = 50` nm and `min_partition_coefficient = 1`.
 
 ## Notes
 

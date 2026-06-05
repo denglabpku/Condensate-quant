@@ -12,11 +12,16 @@
 %    5. Visualization (scatter plot, contour plot)
 clc;close all;clear;rng(42)
 %% Denoising and Deconvolution parameter
+script_dir = 'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step3_downstream_analysis\3color-RNA-2Condensate';
+repo_root = fullfile(script_dir, '..', '..');
+addpath(genpath(fullfile(repo_root, 'Function')));
+
 % Pre-trained N2V network for OCT4/BRD4 live-SR data
-onnx_path = '..\onnx\N2V_2D_OCT4_BRD4_liveSR_125_1_E10_xy3z0.onnx';
+onnx_path = fullfile(repo_root, 'onnx', 'N2V_2D_OCT4_BRD4_liveSR_125_1_E10_xy3z0.onnx');
 is_GPU_avaliable = true;
 
 % Initialize Network and extract patching requirements
+net = importNetworkFromONNX(onnx_path);
 inputsize = net.Layers(1).InputSize;
 patch_h = inputsize(2);
 patch_w = inputsize(3);
@@ -25,14 +30,14 @@ disp('Load deep-learning denoising model complete!');
 disp(['Input image size: H=', num2str(patch_h), '; W=', num2str(patch_w), '; T=', num2str(patch_t), '.']);
 
 % Load Point Spread Function (PSF) for multi-channel deconvolution
-psf_SR_405 = TIFFreader('..\PSF\psf_SR_channel405_2D.tif', 'double');
-psf_SR_488 = TIFFreader('..\PSF\psf_SR_channel488_2D.tif', 'double');
-psf_SR_560 = TIFFreader('..\PSF\psf_SR_channel561_2D.tif', 'double');
-psf_SR_640 = TIFFreader('..\PSF\psf_SR_channel642_2D.tif', 'double');
+psf_SR_405 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel405_2D.tif'), 'double');
+psf_SR_488 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel488_2D.tif'), 'double');
+psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 'double');
+psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 'double');
 
 %% data loading and pre-processing
-filepath_list = {'.\Promoter_RNA_SCR_BRD4', ...
-                 '.\Promoter_RNA_SCR_OCT4'};
+filepath_list = {fullfile(script_dir, 'Promoter_RNA_SCR_BRD4'), ...
+                 fullfile(script_dir, 'Promoter_RNA_SCR_OCT4')};
 condensate_name_list = {'BRD4', 'OCT4'};
 channel_labels = {'Promoter', 'RNA', 'Enhancer', 'Condensate'};
 for filepath_iter = 1:length(filepath_list)
@@ -44,16 +49,16 @@ condensate_name = condensate_name_list{filepath_iter};
 for with_RNA = [1, 0]
 
 if with_RNA
-    output_path = [filepath, 'filter_result_with_RNA_averaged_boundary', filesep];
+    output_path = fullfile(filepath, 'filter_result_with_RNA_averaged_boundary');
     mkdir(output_path)
 
-    filename_list = readlines([filepath, filesep, 'Cell_with_RNA.txt']);
+    filename_list = readlines(fullfile(filepath, 'Cell_with_RNA.txt'));
     filename_list = strrep(filename_list, "'", "");
 else
-    output_path = [filepath, 'filter_result_without_RNA_averaged_boundary', filesep];
+    output_path = fullfile(filepath, 'filter_result_without_RNA_averaged_boundary');
     mkdir(output_path)
 
-    filename_list = readlines([filepath, filesep, 'Cell_without_RNA.txt']);
+    filename_list = readlines(fullfile(filepath, 'Cell_without_RNA.txt'));
     filename_list = strrep(filename_list, "'", "");
 end
 
@@ -61,6 +66,9 @@ filename_list = filename_list(strlength(filename_list) > 0); % remove empty stri
 
 pixelSize = 95;      % Physical pixel size in nanometers (nm)
 resize_factor = 10;  % Sub-pixel interpolation factor for morphological precision
+min_radius = 50; % nm
+min_pixel_num = min_radius^2*pi/(pixelSize/resize_factor)^2;
+min_partition_coefficient = 1;
 roi_width = 31;
 %%
 for file_iter = 1:length(filename_list)
@@ -68,13 +76,15 @@ for file_iter = 1:length(filename_list)
     filename = filename_list{file_iter};
     filename = [filename(1:end-3),'tif'];
     % filename = filename_list(file_iter).name;
-    mkdir([output_path, filename(1:(end-4))]);
+    filename_base = filename(1:(end-4));
+    sample_output_dir = fullfile(output_path, filename_base);
+    mkdir(sample_output_dir);
     disp(['Processing ', filename, ' ...']);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%% read img sequence %%%%%%%%%%%%%%%%%%%%%%%%%%
     
     % Use Bio-Formats to import OME-TIFF metadata
-    r = bfGetReader([filepath, filename]);
+    r = bfGetReader(fullfile(filepath, filename));
     omeMeta = r.getMetadataStore();
     
     sizeX = r.getSizeX();
@@ -181,8 +191,8 @@ for file_iter = 1:length(filename_list)
     img_stack_reconv(:, :, 1:(sizeZ-1), 4) = img_reconv;
 
     % export denoised and deconvolved image stacks
-    bfsave(uint16(img_stack_deconv), [output_path, filename(1:(end-4)), '-denoised-deconv.ome.tif']);
-    bfsave(uint16(img_stack_reconv), [output_path, filename(1:(end-4)), '-denoised.ome.tif']);
+    bfsave(uint16(img_stack_deconv), fullfile(output_path, [filename_base, '-denoised-deconv.ome.tif']));
+    bfsave(uint16(img_stack_reconv), fullfile(output_path, [filename_base, '-denoised.ome.tif']));
     img_stack_deconv(:, :, :, 1) = double(img_stack_denoised(:, :, :, 1));
     img_stack_deconv(:, :, :, 2) = double(img_stack_denoised(:, :, :, 2));
     img_stack_deconv(:, :, :, 3) = double(img_stack_denoised(:, :, :, 3));
@@ -266,7 +276,7 @@ for file_iter = 1:length(filename_list)
     spots_488_3D = spots_488;
     spots_560_3D = spots_560;
 
-    save([output_path, filename(1:(end-4)), '.mat'], "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
+    save(fullfile(output_path, [filename_base, '.mat']), "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
 
     %%
     foci_result = struct();
@@ -337,7 +347,7 @@ for file_iter = 1:length(filename_list)
         for frame_iter = 1:numberOfPages
             refined_bw(round(rc_index_rescale(frame_iter, 1)), round(rc_index_rescale(frame_iter, 2)), frame_iter) = 1;
         end
-        % TIFwriter(uint8(imdilate(refined_bw, strel('disk', 5))), [filepath, filename(1:(end-4)), '-', channel_labels{c_iter}, '-Center.tif'], 'lzw');
+        % TIFwriter(uint8(imdilate(refined_bw, strel('disk', 5))), fullfile(filepath, [filename(1:(end-4)), '-', channel_labels{c_iter}, '-Center.tif']), 'lzw');
         
         % calculate foci intensity relative to background
         [rna_bkg,base_bkg] = IntensityCalculation(img_series,nucleus_mask, rc_index, 4, 5);
@@ -371,8 +381,8 @@ for file_iter = 1:length(filename_list)
             img_processed_roi(row1:row2, col1:col2, frame_iter) = reshape(temp_img(temp_roi_resize), [row2-row1+1, col2-col1+1]);
             img_center(row1:row2, col1:col2, frame_iter) = reshape(temp_mask(temp_roi_resize), [row2-row1+1, col2-col1+1]);
         end
-        TIFwriter(uint16(img_processed_roi), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '.tif']);
-        TIFwriter(uint8(img_center), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-Center-roi.tif'], 'lzw');
+        TIFwriter(uint16(img_processed_roi), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '.tif']));
+        TIFwriter(uint8(img_center), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-Center-roi.tif']), 'lzw');
     
         % important parameter: rc_index, bw, intensity
         foci_result(c_iter).rna_bkg = rna_bkg;
@@ -381,7 +391,7 @@ for file_iter = 1:length(filename_list)
         foci_result(c_iter).intensity2 = intensity2;
     end
     
-    save([output_path, filename(1:(end-4)), '.mat'], "foci_result", "roi_window", '-append');
+    save(fullfile(output_path, [filename_base, '.mat']), "foci_result", "roi_window", '-append');
 
 %% dealing with condensate channel
 condensate_result = struct; 
@@ -432,6 +442,13 @@ for c_iter = 4 % OCT4 or BRD4 channel
         CDcenter(row1:row2, col1:col2, frame_iter) = reshape(temp_CDcenter(temp_roi_resize), [row2-row1+1, col2-col1+1]);    
         CDinterface(:, :, frame_iter) = getCDinterface(img_processed_bicubic_roi(:, :, frame_iter), bw_local, 0);
         % [temp_CDboundary, temp_labels] = getCDboundaryWS(img_processed_bicubic_roi(:, :, frame_iter), bw_local, CDcenter(:, :, frame_iter), CDinterface(:, :, frame_iter), 0);
+        [~, temp_labels] = getCDboundary(img_processed_bicubic_roi(:, :, frame_iter), bw_local, CDcenter(:, :, frame_iter), CDinterface(:, :, frame_iter), 0);
+
+        % Filter condensates by area and enrichment.
+        [temp_labels, stats] = filter_condensates_Area_PC(temp_labels, img_processed_bicubic_roi(:, :, frame_iter), min_pixel_num, min_partition_coefficient, resize_factor);
+        bw_local = temp_labels>0;
+        CDcenter(:, :, frame_iter) = CDcenter(:, :, frame_iter) & bw_local;
+        CDinterface(:, :, frame_iter) = getCDinterface(img_processed_bicubic_roi(:, :, frame_iter), bw_local, 0);
         [temp_CDboundary, temp_labels] = getCDboundary(img_processed_bicubic_roi(:, :, frame_iter), bw_local, CDcenter(:, :, frame_iter), CDinterface(:, :, frame_iter), 0);
         CDboundary(:, :, frame_iter) = temp_CDboundary;
         labels(:, :, frame_iter) = temp_labels;
@@ -461,7 +478,7 @@ for c_iter = 4 % OCT4 or BRD4 channel
             end
             axis off
             daspect([1, 1, 1]);
-            print(fig1, [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-HMRFseg.png'], '-dpng');
+            print(fig1, fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-HMRFseg.png']), '-dpng');
             close;
         end
     end
@@ -469,12 +486,12 @@ for c_iter = 4 % OCT4 or BRD4 channel
     CDmask_export(CDboundary)=255;
 
     % Export morphological results as TIFF
-    TIFwriter(uint16(img_processed_roi), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-roi.tif']);
-    TIFwriter(uint16(img_processed_bicubic_roi), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-roi-bicubic.tif']);
-    TIFwriter(uint8(CDcenter), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDcenter.tif'], 'lzw');
-    TIFwriter(uint8(CDinterface), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDinterface.tif'], 'lzw');
-    TIFwriter(uint8(CDboundary), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDboundary.tif'], 'lzw');
-    TIFwriter(uint8(CDmask_export), [output_path, filename(1:(end-4)), filesep, filename(1:(end-4)), '-', channel_labels{c_iter}, '-CDmask.tif']);
+    TIFwriter(uint16(img_processed_roi), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-roi.tif']));
+    TIFwriter(uint16(img_processed_bicubic_roi), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-roi-bicubic.tif']));
+    TIFwriter(uint8(CDcenter), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDcenter.tif']), 'lzw');
+    TIFwriter(uint8(CDinterface), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDinterface.tif']), 'lzw');
+    TIFwriter(uint8(CDboundary), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDboundary.tif']), 'lzw');
+    TIFwriter(uint8(CDmask_export), fullfile(sample_output_dir, [filename_base, '-', channel_labels{c_iter}, '-CDmask.tif']));
 
     % Store results in struct
     condensate_result(c_iter).name = channel_labels{c_iter};
@@ -533,7 +550,7 @@ for c_iter = 4 % OCT4 or BRD4 channel
 end
 
 % export condensate segmentation result and centroids summary plot
-save([output_path, filename(1:(end-4)), '.mat'], "condensate_result", '-append');
+save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", '-append');
 
 % visualization
 frame_iter = 1;
@@ -553,7 +570,7 @@ plot(spots(:,2), spots(:,1), 'mo','MarkerSize',7,'LineWidth',1.2);
 title([condensate_name, ', layer:', num2str(z_layer_used)],'FontSize',11,'FontWeight','bold') %gai cheng used
 hold off
 
-print(fig, [output_path, filesep, filename(1:(end-4)), '.png'], '-dpng');
+print(fig, fullfile(output_path, [filename_base, '.png']), '-dpng');
 
 close all;
 end
@@ -568,17 +585,17 @@ roi_width = 31;
 resize_factor = 10;
 pixelSize = 95;
 
-filepath = '.\Promoter_RNA_SCR_OCT4'; condensate = 'OCT4';
-% filepath = '.\Promoter_RNA_SCR_BRD4'; condensate = 'BRD4';
+filepath = fullfile(script_dir, 'Promoter_RNA_SCR_OCT4'); condensate = 'OCT4';
+% filepath = fullfile(script_dir, 'Promoter_RNA_SCR_BRD4'); condensate = 'BRD4';
 
-filepath_withRNA = [filepath, 'filter_result_with_RNA_averaged_boundary', filesep];
-filepath_withoutRNA = [filepath, 'filter_result_without_RNA_averaged_boundary', filesep];
+filepath_withRNA = fullfile(filepath, 'filter_result_with_RNA_averaged_boundary');
+filepath_withoutRNA = fullfile(filepath, 'filter_result_without_RNA_averaged_boundary');
 
 %Calculate cell in on state
-filename_withRNA_list = dir([filepath_withRNA, '*.mat']);
+filename_withRNA_list = dir(fullfile(filepath_withRNA, '*.mat'));
 for file_iter = 1:length(filename_withRNA_list)
     filename = filename_withRNA_list(file_iter).name;
-    load([filepath_withRNA, filename], "foci_result", "condensate_result", "channel_labels");
+    load(fullfile(filepath_withRNA, filename), "foci_result", "condensate_result", "channel_labels");
 
     %generate random localizations
     rand_index = [(1 + (roi_width-2)*rand)*resize_factor, (1 + (roi_width-2)*rand)*resize_factor];
@@ -595,14 +612,14 @@ for file_iter = 1:length(filename_withRNA_list)
     condensate_result(c_iter).randradius = boundary_2centroid*pixelSize/resize_factor;
 
     %save in append mode to previous data struct
-    save([filepath_withRNA, filename], "condensate_result", '-append');
+    save(fullfile(filepath_withRNA, filename), "condensate_result", '-append');
 end
 
 %Calculate cell in off state
-filename_woRNA_list = dir([filepath_withoutRNA, '*.mat']);
+filename_woRNA_list = dir(fullfile(filepath_withoutRNA, '*.mat'));
 for file_iter = 1:length(filename_woRNA_list)
     filename = filename_woRNA_list(file_iter).name;
-    load([filepath_withoutRNA, filename], "foci_result", "condensate_result", "channel_labels");
+    load(fullfile(filepath_withoutRNA, filename), "foci_result", "condensate_result", "channel_labels");
     
     rand_index = [(1 + (roi_width-2)*rand)*resize_factor, (1 + (roi_width-2)*rand)*resize_factor];
 
@@ -617,12 +634,12 @@ for file_iter = 1:length(filename_woRNA_list)
     condensate_result(c_iter).randradius = boundary_2centroid*pixelSize/resize_factor;
 
     %save in append mode to previous data struct
-    save([filepath_withoutRNA, filename], "condensate_result", '-append');
+    save(fullfile(filepath_withoutRNA, filename), "condensate_result", '-append');
 end
 %% calculate distance between DNA/RNA sites
 
-filepath = '.\Promoter_RNA_SCR_OCT4'; condensate = 'OCT4';
-% filepath = '.\Promoter_RNA_SCR_BRD4'; condensate = 'BRD4';
+filepath = fullfile(script_dir, 'Promoter_RNA_SCR_OCT4'); condensate = 'OCT4';
+% filepath = fullfile(script_dir, 'Promoter_RNA_SCR_BRD4'); condensate = 'BRD4';
 infotable_path = fullfile(filepath,'OCT4_label_z.xlsx');
 % infotable_path = fullfile(filepath,'BRD4_label_z.xlsx');
 
@@ -635,17 +652,17 @@ for i = 1:size(infotable,1)
     infotable(i).name = [tempcell(1:end-3),'mat'];
 end
 
-filepath_withRNA = [filepath, 'filter_result_with_RNA_averaged_boundary', filesep];
-filepath_withoutRNA = [filepath, 'filter_result_without_RNA_averaged_boundary', filesep];
+filepath_withRNA = fullfile(filepath, 'filter_result_with_RNA_averaged_boundary');
+filepath_withoutRNA = fullfile(filepath, 'filter_result_without_RNA_averaged_boundary');
 pixelSize = 95;
 
 %Calculate cell in on state
-filename_withRNA_list = dir([filepath_withRNA, '*.mat']);
+filename_withRNA_list = dir(fullfile(filepath_withRNA, '*.mat'));
 dist_summary_withRNA = struct();
 epdist_rna_on = zeros(length(filename_withRNA_list),3);
 for file_iter = 1:length(filename_withRNA_list)
     filename = filename_withRNA_list(file_iter).name;
-    load([filepath_withRNA, filename], "foci_result", "condensate_result");
+    load(fullfile(filepath_withRNA, filename), "foci_result", "condensate_result");
 
     dist_summary_withRNA(file_iter).filename = filename;
 
@@ -677,12 +694,12 @@ for file_iter = 1:length(filename_withRNA_list)
 end
 
 %Calculate cell in off state
-filename_woRNA_list = dir([filepath_withoutRNA, '*.mat']);
+filename_woRNA_list = dir(fullfile(filepath_withoutRNA, '*.mat'));
 dist_summary_woRNA = struct();
 epdist_rna_off = zeros(length(filename_withRNA_list),2);
 for file_iter = 1:length(filename_woRNA_list)
     filename = filename_woRNA_list(file_iter).name;
-    load([filepath_withoutRNA, filename], "foci_result", "condensate_result");
+    load(fullfile(filepath_withoutRNA, filename), "foci_result", "condensate_result");
 
     zstep = getZstep(infotable,filename);
 
@@ -709,15 +726,15 @@ end
 
 %% calculate distance from DNA(enhancer)/RNA sites to boundary, centroids and condensate radius
 
-filepath = '.\Promoter_RNA_SCR_OCT4'; condensate = 'OCT4';
-% filepath = '.\Promoter_RNA_SCR_BRD4'; condensate = 'BRD4';
+filepath = fullfile(script_dir, 'Promoter_RNA_SCR_OCT4'); condensate = 'OCT4';
+% filepath = fullfile(script_dir, 'Promoter_RNA_SCR_BRD4'); condensate = 'BRD4';
 
-filepath_withRNA = [filepath, 'filter_result_with_RNA_averaged_boundary', filesep];
-filepath_withoutRNA = [filepath, 'filter_result_without_RNA_averaged_boundary', filesep];
+filepath_withRNA = fullfile(filepath, 'filter_result_with_RNA_averaged_boundary');
+filepath_withoutRNA = fullfile(filepath, 'filter_result_without_RNA_averaged_boundary');
 
 pixelSize = 95;
 
-filename_withRNA_list = dir([filepath_withRNA, '*.mat']);
+filename_withRNA_list = dir(fullfile(filepath_withRNA, '*.mat'));
 PRE_centroid_radius = zeros(length(filename_withRNA_list), 9); 
 PRE_rand_centroid_radius = zeros(length(filename_withRNA_list), 2);
 
@@ -727,7 +744,7 @@ PRE_all_nearest_centroid_radius = zeros(length(filename_withRNA_list), 3);
 %Calculate cell in on state
 for file_iter = 1:length(filename_withRNA_list)
     filename = filename_withRNA_list(file_iter).name;
-    load([filepath_withRNA, filename], "foci_result", "condensate_result", "channel_labels");
+    load(fullfile(filepath_withRNA, filename), "foci_result", "condensate_result", "channel_labels");
 
     PRE_centroid_radius(file_iter, :) = [condensate_result(4).dist2centroid(1), condensate_result(4).boundary2centroid(1), ...
                                          condensate_result(4).dist2centroid(2), condensate_result(4).boundary2centroid(2), ...
@@ -752,12 +769,12 @@ for file_iter = 1:length(filename_withRNA_list)
 end
 
 %Calculate cell in off state
-filename_woRNA_list = dir([filepath_withoutRNA, '*.mat']);
+filename_woRNA_list = dir(fullfile(filepath_withoutRNA, '*.mat'));
 PE_centroid_radius = zeros(length(filename_woRNA_list), 5); 
 PE_rand_centroid_radius = zeros(length(filename_woRNA_list), 2); 
 for file_iter = 1:length(filename_woRNA_list)
     filename = filename_woRNA_list(file_iter).name;
-    load([filepath_withoutRNA, filename], "foci_result", "condensate_result", "channel_labels");
+    load(fullfile(filepath_withoutRNA, filename), "foci_result", "condensate_result", "channel_labels");
 
     PE_centroid_radius(file_iter, :) = [condensate_result(4).dist2centroid(1), condensate_result(4).boundary2centroid(1), ...
                                          condensate_result(4).dist2centroid(3), condensate_result(4).boundary2centroid(3), ...
