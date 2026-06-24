@@ -305,7 +305,7 @@ Main script:
 denoise_deconv_RNA_condensate_2D_HMRF_boundary.m
 ```
 
-This workflow analyzes 3-color images containing RNA, OCT4, and BRD4 channels. It detects RNA foci, extracts local ROIs around RNA sites, segments OCT4 and BRD4 condensates using HMRF, and calculates distances between RNA foci and condensate boundaries, centers, interfaces, and centroids.
+This workflow analyzes 3-color images containing RNA, OCT4, and BRD4 channels. It detects RNA foci, extracts local ROIs around RNA sites, segments OCT4 and BRD4 condensates using HMRF, and calculates distances between RNA foci and condensate boundaries and centroids.
 
 Expected channel labels:
 
