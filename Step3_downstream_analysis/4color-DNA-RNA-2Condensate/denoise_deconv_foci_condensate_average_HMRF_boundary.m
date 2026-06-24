@@ -12,7 +12,10 @@
 %    5. Visualization (scatter plot, contour plot)
 clc;close all;clear;rng(42);
 %% Denoising and Deconvolution parameter
-script_dir = 'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step3_downstream_analysis\3color-RNA-2Condensate';
+script_dir = fileparts(mfilename('fullpath'));
+if isempty(script_dir)
+    script_dir = pwd;
+end
 repo_root = fullfile(script_dir, '..', '..');
 addpath(genpath(fullfile(repo_root, 'Function')));
 
@@ -36,6 +39,7 @@ psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 
 psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 'double');
 
 %% data loading and pre-processing
+% These two folders map to the promoter-RNA and SCR-RNA 4-color LiveSR datasets.
 filepath_list = {fullfile(script_dir, 'Promoter_RNA_OCT4_BRD4'),...
                  fullfile(script_dir, 'SCR_RNA_OCT4_BRD4')};
 
@@ -160,6 +164,11 @@ for file_iter = 1:length(filename_list)
         if mean(img(:))>=500
             layer_select = [layer_select, layer_iter];
         end
+    end
+    if isempty(layer_select)
+        warning('LayerSelection:Empty', ...
+            'No 405-channel layers passed the mean-intensity filter for %s; using all z layers.', filename);
+        layer_select = 1:sizeZ;
     end
 
     % % 405-channel deconvolution
@@ -399,7 +408,14 @@ for c_iter = 3:4 % OCT4 and BRD4 channel
         temp_img_roi = img_processed_bicubic_roi(:, :, frame_iter);
         [HMRFseg, ~] = HMRFseg4img(temp_img_roi, temp_nucleus_mask, nclust, 0.1, 10^(-8));
         bw_HMRF = HMRFseg.img_class>=seg_point;
-        local_thresh = min(temp_img_roi(bw_HMRF));
+        if any(bw_HMRF(:))
+            local_thresh = min(temp_img_roi(bw_HMRF));
+        else
+            warning('HMRF:EmptyCondensateClass', ...
+                'No pixels reached class %d in %s frame %d channel %s.', ...
+                seg_point, filename, frame_iter, channel_labels{c_iter});
+            local_thresh = inf;
+        end
         bw_local = bw_HMRF;
 
         % local_thresh = local_otsu_rank(img_processed_bicubic_roi(:, :, frame_iter),neighbor_radius*resize_factor, 256);
@@ -531,7 +547,7 @@ save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", "dist_
 % visualization
 frame_iter = 1;
 fig = figure('Color','w','Position',[200 200 1350 680]);
-t = tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
+tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
 nexttile
 imagesc(condensate_result(3).img_processed_roi)
 axis image off
@@ -566,8 +582,8 @@ end
 end
 
 %% calculate distance from random sites to boundary, centroids and condensate radius
-% Analyzation and visualization from pre-processed data start here
-% No need to re-run previous steps
+% Post-processing blocks below start from saved .mat files. Update filepath/dna when
+% switching between Promoter_RNA_OCT4_BRD4 and SCR_RNA_OCT4_BRD4.
 
 filepath = fullfile(script_dir, 'Promoter_RNA_OCT4_BRD4');
 % filepath = fullfile(script_dir, 'SCR_RNA_OCT4_BRD4');
@@ -636,7 +652,7 @@ for file_iter = 1:length(filename_withRNA_list)
     filename = filename_withRNA_list(file_iter).name;
     load(fullfile(filepath_withRNA, filename), "foci_result");
 
-    if num2str(filename(1:6)) < 202511
+    if str2double(filename(1:6)) < 202511
         px=95; py=95; pz=300;
     else
         px=95; py=95; pz=200;
@@ -651,7 +667,12 @@ end
 
 figure;
 subplot(1, 2, 1)
-histogram([dist_summary_SCR_RNA.distance])
+if exist('dist_summary_SCR_RNA', 'var')
+    histogram([dist_summary_SCR_RNA.distance])
+else
+    text(0.5, 0.5, 'Run SCR summary first', 'HorizontalAlignment', 'center')
+    axis off
+end
 subplot(1, 2, 2)
 histogram([dist_summary_Prom_RNA.distance])
 
@@ -936,7 +957,7 @@ nexttile
 plot_density_contour(rand2oct4brd4_centroid_radius(:,3), ...
                      rand2oct4brd4_centroid_radius(:,4), ...
                      gridpts, xg, yg, c_black, range_x_limit, range_y_limit)
-title(['Random – BRD4'])
+title('Random – BRD4')
 
 
 % ========== unified format ==========

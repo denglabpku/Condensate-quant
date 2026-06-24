@@ -12,7 +12,10 @@
 
 clc;close all;clear;
 %% Denoising and Deconvolution parameter
-script_dir = 'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step3_downstream_analysis\3color-RNA-2Condensate';
+script_dir = fileparts(mfilename('fullpath'));
+if isempty(script_dir)
+    script_dir = pwd;
+end
 repo_root = fullfile(script_dir, '..', '..');
 addpath(genpath(fullfile(repo_root, 'Function')));
 
@@ -35,6 +38,7 @@ psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 
 psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 'double');
 
 %% data loading & pre-processing
+% TIFF files in this folder correspond to the Fig. 2 RNA condensate LiveSR dataset.
 filepath_list = {script_dir};
 
 for filepath_iter = 1:length(filepath_list)
@@ -290,7 +294,14 @@ for c_iter = 2:3 % OCT4 and BRD4 channel
         temp_img_roi = img_processed_bicubic_roi(:, :, frame_iter);
         [HMRFseg, ~] = HMRFseg4img(temp_img_roi, temp_nucleus_mask, nclust, 0.1, 10^(-8));
         bw_HMRF = HMRFseg.img_class>=seg_point;
-        local_thresh = min(temp_img_roi(bw_HMRF));
+        if any(bw_HMRF(:))
+            local_thresh = min(temp_img_roi(bw_HMRF));
+        else
+            warning('HMRF:EmptyCondensateClass', ...
+                'No pixels reached class %d in %s frame %d channel %s.', ...
+                seg_point, filename, frame_iter, channel_labels{c_iter});
+            local_thresh = inf;
+        end
         bw_local = bw_HMRF;
 
         % CD center, interface, boundary and labels identification

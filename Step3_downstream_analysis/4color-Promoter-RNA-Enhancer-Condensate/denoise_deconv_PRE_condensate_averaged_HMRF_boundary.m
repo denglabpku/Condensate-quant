@@ -12,7 +12,10 @@
 %    5. Visualization (scatter plot, contour plot)
 clc;close all;clear;rng(42)
 %% Denoising and Deconvolution parameter
-script_dir = 'C:\Users\feynm\OneDrive - Peking University\桌面\Work\1_Project\SPT\Algorithm\Condensate-quant\Step3_downstream_analysis\3color-RNA-2Condensate';
+script_dir = fileparts(mfilename('fullpath'));
+if isempty(script_dir)
+    script_dir = pwd;
+end
 repo_root = fullfile(script_dir, '..', '..');
 addpath(genpath(fullfile(repo_root, 'Function')));
 
@@ -36,6 +39,7 @@ psf_SR_560 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel561_2D.tif'), 
 psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 'double');
 
 %% data loading and pre-processing
+% These folders map to the promoter-RNA-SCR datasets with either BRD4 or OCT4 condensate labeling.
 filepath_list = {fullfile(script_dir, 'Promoter_RNA_SCR_BRD4'), ...
                  fullfile(script_dir, 'Promoter_RNA_SCR_OCT4')};
 condensate_name_list = {'BRD4', 'OCT4'};
@@ -164,6 +168,11 @@ for file_iter = 1:length(filename_list)
         if mean(img(:))>=500
             layer_select = [layer_select, layer_iter];
         end
+    end
+    if isempty(layer_select)
+        warning('LayerSelection:Empty', ...
+            'No 405-channel layers passed the mean-intensity filter for %s; using all z layers.', filename);
+        layer_select = 1:sizeZ;
     end
 
     % 405-channel deconvolution
@@ -355,7 +364,8 @@ for file_iter = 1:length(filename_list)
         intensity = zeros(size(norm_base_bkg));
         for frame_iter = 1:numberOfPages
             % intensity(frame_iter) = rna_bkg(frame_iter, 1)/norm_base_bkg(frame_iter)*norm_base_bkg(1);
-            intensity(frame_iter) = rna_bkg(frame_iter, 1)/base_bkg;
+            background_value = base_bkg(min(frame_iter, numel(base_bkg)));
+            intensity(frame_iter) = rna_bkg(frame_iter, 1)/background_value;
         end
     
         % define roi_window and roi_resize for roi selection
@@ -388,7 +398,6 @@ for file_iter = 1:length(filename_list)
         foci_result(c_iter).rna_bkg = rna_bkg;
         foci_result(c_iter).base_bkg = base_bkg;
         foci_result(c_iter).intensity = intensity;
-        foci_result(c_iter).intensity2 = intensity2;
     end
     
     save(fullfile(output_path, [filename_base, '.mat']), "foci_result", "roi_window", '-append');
@@ -425,7 +434,14 @@ for c_iter = 4 % OCT4 or BRD4 channel
         temp_img_roi = img_processed_bicubic_roi(:, :, frame_iter);
         [HMRFseg, ~] = HMRFseg4img(temp_img_roi, true(size(temp_img_roi)), nclust, 0.1, 10^(-8));
         bw_HMRF = HMRFseg.img_class>=seg_point;
-        local_thresh = min(temp_img_roi(bw_HMRF));
+        if any(bw_HMRF(:))
+            local_thresh = min(temp_img_roi(bw_HMRF));
+        else
+            warning('HMRF:EmptyCondensateClass', ...
+                'No pixels reached class %d in %s frame %d channel %s.', ...
+                seg_point, filename, frame_iter, channel_labels{c_iter});
+            local_thresh = inf;
+        end
         bw_local = bw_HMRF;
 
         % local_thresh = local_otsu_rank(img_processed_bicubic_roi(:, :, frame_iter),neighbor_radius*resize_factor, 256);
@@ -555,7 +571,7 @@ save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", '-appe
 % visualization
 frame_iter = 1;
 fig = figure('Color','w','Position',[200 200 680 680]);
-t = tiledlayout(1,1,'TileSpacing','compact','Padding','compact');
+tiledlayout(1,1,'TileSpacing','compact','Padding','compact');
 nexttile
 imagesc(condensate_result(4).img_processed_roi)
 axis image off
@@ -578,8 +594,8 @@ end
 end
 
 %% calculate distance from random sites to boundary, centroids and condensate radius
-% Analyzation and visualization from pre-processed data start here
-% No need to re-run previous steps
+% Post-processing blocks below start from saved .mat files. Update filepath,
+% condensate, and infotable_path when switching between OCT4 and BRD4 datasets.
 
 roi_width = 31;
 resize_factor = 10;
@@ -606,7 +622,12 @@ for file_iter = 1:length(filename_withRNA_list)
     labels = condensate_result(c_iter).labels;
     [dist_2boundary, dist_2centroid, boundary_2centroid] = getDist2InterfaceRadius(rand_index, spots_resize, CDcenter, labels);
     
-    condensate_result(c_iter).rand_dist2centroid = min(vecnorm(rand_index-center_list,2,2))*pixelSize/resize_factor;
+    center_list = spots_resize{1};
+    if isempty(center_list)
+        condensate_result(c_iter).rand_dist2centroid = NaN;
+    else
+        condensate_result(c_iter).rand_dist2centroid = min(vecnorm(rand_index-center_list,2,2))*pixelSize/resize_factor;
+    end
     condensate_result(c_iter).rand2boundary = dist_2boundary*pixelSize/resize_factor;
     condensate_result(c_iter).rand2centroid = dist_2centroid*pixelSize/resize_factor;
     condensate_result(c_iter).randradius = boundary_2centroid*pixelSize/resize_factor;
@@ -696,7 +717,7 @@ end
 %Calculate cell in off state
 filename_woRNA_list = dir(fullfile(filepath_withoutRNA, '*.mat'));
 dist_summary_woRNA = struct();
-epdist_rna_off = zeros(length(filename_withRNA_list),2);
+epdist_rna_off = zeros(length(filename_woRNA_list),3);
 for file_iter = 1:length(filename_woRNA_list)
     filename = filename_woRNA_list(file_iter).name;
     load(fullfile(filepath_withoutRNA, filename), "foci_result", "condensate_result");
