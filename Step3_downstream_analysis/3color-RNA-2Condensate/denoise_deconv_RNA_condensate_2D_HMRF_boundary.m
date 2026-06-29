@@ -36,7 +36,7 @@ psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 
 
 %% data loading & pre-processing
 % TIFF files in this folder correspond to the Fig. 2 RNA condensate LiveSR dataset.
-filepath_list = {script_dir};
+filepath_list = {'D:\ImageData\Supplementary_Imaging_Data\ExampleData\RNA_condensate_imaging'};
 
 for filepath_iter = 1:length(filepath_list)
 

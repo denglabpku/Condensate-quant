@@ -37,8 +37,8 @@ psf_SR_640 = TIFFreader(fullfile(repo_root, 'PSF', 'psf_SR_channel642_2D.tif'), 
 
 %% data loading and pre-processing
 % These two folders map to the promoter-RNA and SCR-RNA 4-color LiveSR datasets.
-filepath_list = {fullfile(script_dir, 'Promoter_RNA_OCT4_BRD4'),...
-                 fullfile(script_dir, 'SCR_RNA_OCT4_BRD4')};
+filepath_list = {fullfile('D:\ImageData\Supplementary_Imaging_Data\ExampleData', 'Promoter_RNA_OCT4_BRD4'),...
+                 fullfile('D:\ImageData\Supplementary_Imaging_Data\ExampleData', 'SCR_RNA_OCT4_BRD4')};
 
 for filepath_iter = 1:length(filepath_list)
 
