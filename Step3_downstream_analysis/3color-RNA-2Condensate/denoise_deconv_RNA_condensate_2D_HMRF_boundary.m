@@ -12,10 +12,7 @@
 
 clc;close all;clear;
 %% Denoising and Deconvolution parameter
-script_dir = fileparts(mfilename('fullpath'));
-if isempty(script_dir)
-    script_dir = pwd;
-end
+script_dir = pwd;
 repo_root = fullfile(script_dir, '..', '..');
 addpath(genpath(fullfile(repo_root, 'Function')));
 
@@ -52,7 +49,7 @@ pixelSize = 95;      % Physical pixel size in nanometers (nm)
 resize_factor = 10;  % Sub-pixel interpolation factor for morphological precision
 min_radius = 50; % nm
 min_pixel_num = min_radius^2*pi/(pixelSize/resize_factor)^2;
-min_partition_coefficient = [1, 1];
+min_partition_coefficient = [1.2, 1.2];
 roi_width = 31;
 
 for file_iter = 1:length(filename_list)
