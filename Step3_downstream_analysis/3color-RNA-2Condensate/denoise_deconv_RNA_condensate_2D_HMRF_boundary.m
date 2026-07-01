@@ -42,6 +42,8 @@ for filepath_iter = 1:length(filepath_list)
 
 filepath = filepath_list{filepath_iter};
 output_path = filepath;
+error_log_path = fullfile(output_path, 'Cell_analysis_errors.txt');
+initializeCellProcessingErrorLog(error_log_path);
 
 filename_list = dir(fullfile(filepath, '*.tif'));
 
@@ -59,6 +61,8 @@ for file_iter = 1:length(filename_list)
     sample_output_dir = fullfile(output_path, filename_base);
     mkdir(sample_output_dir);
     disp(['Processing ', filename, ' ...']);
+    r = [];
+    try
 
     %%%%%%%%%%%%%%%%%%%%%%%%%% read img sequence %%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -456,6 +460,13 @@ print(fig, fullfile(output_path, [filename_base, '.png']), '-dpng');
 
 %%
 close all;
+    catch ME
+        cleanupCellProcessingResources(r);
+        logCellProcessingError(error_log_path, filename, ME);
+        warning('CellProcessing:Failed', ...
+            'Failed processing %s. Skipping to next cell. See %s.', filename, error_log_path);
+        continue
+    end
 end
 
 end

@@ -89,13 +89,14 @@ This avoids common multiprocessing issues during data loading.
 
 ## Data
 
-Example and raw data information is listed in `DataSource.txt` files under the corresponding analysis folders, for example:
+Example data, raw data information, and organized downstream data templates are listed under the corresponding analysis folders, for example:
 
 ```text
 Step2_deconvolution-segmentation/DataSource.txt
 Step3_downstream_analysis/3color-RNA-2Condensate/DataSource.txt
 Step3_downstream_analysis/4color-DNA-RNA-2Condensate/*/DataSource.txt
 Step3_downstream_analysis/4color-Promoter-RNA-Enhancer-Condensate/*/DataSource.txt
+Step3_downstream_analysis/3color-Promoter_RNA_SCR/
 ```
 
 The current data source points to the Zenodo DOI:
@@ -239,7 +240,7 @@ filepath_list = {'path/to/your/tif/folder/'};
 pixelSize = 95;
 resize_factor = 10;
 min_radius = 50;
-min_partition_coefficient = 1.25;
+min_partition_coefficient = 1.2;
 ```
 
 Then run the script in MATLAB.
@@ -289,6 +290,7 @@ Step3_downstream_analysis/
   3color-RNA-2Condensate/
   4color-DNA-RNA-2Condensate/
   4color-Promoter-RNA-Enhancer-Condensate/
+  3color-Promoter_RNA_SCR/
 ```
 
 ### 3-Color RNA and Two-Condensate Analysis
@@ -341,7 +343,7 @@ Each subfolder should contain:
 ```text
 Cell_with_RNA.txt
 Cell_without_RNA.txt
-DataSource.txt
+Imaging_data.tif
 ```
 
 ### 4-Color Promoter/RNA/Enhancer and Single-Condensate Analysis
@@ -372,9 +374,40 @@ Each subfolder should contain:
 ```text
 Cell_with_RNA.txt
 Cell_without_RNA.txt
-DataSource.txt
-*_label_z.xlsx
+Imaging_data.tif
 ```
+
+### 3-Color Promoter/RNA/Enhancer Distance Analysis
+
+Directory:
+
+```text
+Step3_downstream_analysis/3color-Promoter_RNA_SCR/
+```
+
+Main script:
+
+```text
+denoise_deconv_PRE_distance.m
+```
+
+This workflow analyzes 3-color LiveSR images containing promoter, RNA, and enhancer/SCR channels. It denoises and deconvolves the image stacks, detects promoter/RNA/enhancer foci, extracts local ROIs around foci, and calculates promoter-enhancer distances for RNA-positive and RNA-negative cells.
+
+Expected channel labels:
+
+```text
+Promoter, RNA, Enhancer
+```
+
+Each subfolder should contain:
+
+```text
+Cell_with_RNA.txt
+Cell_without_RNA.txt
+Imaging_data.tif
+```
+
+`Cell_with_RNA.txt` and `Cell_without_RNA.txt` should list the organized ON/OFF raw image filenames. `zstep_sheet.csv` should contain one row per processed `.mat` file, with at least the columns `name` and `Var2`, where `Var2` is the z-step size in nm used for 3D distance calculation.
 
 ### Step 3 Outputs
 
@@ -398,6 +431,7 @@ Depending on the workflow, outputs may include:
 *-CDboundary.tif
 *.mat
 *.png
+Cell_analysis_errors.txt
 ```
 
 The output `.mat` files typically store:
@@ -411,6 +445,10 @@ roi_window
 channel_labels
 pixelSize
 resize_factor
+dist_summary_withRNA
+dist_summary_woRNA
+epdist_rna_on
+epdist_rna_off
 ```
 
 ### Parameters to Check Before Running
@@ -424,11 +462,12 @@ Before running Step 3 scripts, verify:
 - `Cell_with_RNA.txt` and `Cell_without_RNA.txt` contain valid image filenames.
 - `channel_labels` match the actual image channel order.
 - `pixelSize`, `resize_factor`, `roi_width`, `nclust`, and `seg_point` are appropriate for the dataset.
-- `min_radius` and `min_partition_coefficient` are appropriate for condensate filtering. The current Step 3 defaults are `min_radius = 50` nm and `min_partition_coefficient = 1`.
+- `min_radius` and `min_partition_coefficient` are appropriate for condensate filtering. The current Step 3 defaults are `min_radius = 50` nm and `min_partition_coefficient = 1.2`.
 
 ## Notes
 
 - Several scripts contain example relative or absolute paths. Update them to match your local data paths before running.
+- Step 3 batch-processing scripts write `Cell_analysis_errors.txt` in each output directory when an individual cell fails; failed cells are skipped so the remaining cells can continue processing.
 - Step 3 scripts are experiment-specific and are best treated as analysis templates. Check channel order, z-layer selection logic, and foci-matching thresholds before applying them to a new dataset.
 - On Windows, set `num_workers = 0` in the Python scripts.
 - If GPU inference is unavailable in MATLAB, set:

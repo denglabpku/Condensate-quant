@@ -61,7 +61,8 @@ else
 end
 
 filename_list = filename_list(strlength(filename_list) > 0); % remove empty string
-
+error_log_path = fullfile(output_path, 'Cell_analysis_errors.txt');
+initializeCellProcessingErrorLog(error_log_path);
 
 pixelSize = 95;      % Physical pixel size in nanometers (nm)
 resize_factor = 10;  % Sub-pixel interpolation factor for morphological precision
@@ -77,6 +78,8 @@ for file_iter = 1:length(filename_list)
     sample_output_dir = fullfile(output_path, filename_base);
     mkdir(sample_output_dir);
     disp(['Processing ', filename, ' ...']);
+    r = [];
+    try
 
     %%%%%%%%%%%%%%%%%%%%%%%%%% read img sequence %%%%%%%%%%%%%%%%%%%%%%%%%%
     
@@ -205,9 +208,6 @@ for file_iter = 1:length(filename_list)
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%% nucleus mask %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    % Generate global nucleus mask using Channel 560
-    nucleus_mask = NucleusMask2(mean(img_stack_reconv(:, :, :, 3), 3), 15);
-
     temp_channel_405 = channel_405(:, :, layer_select);
     % Detect 3D spots using Laplacian of Gaussian (LoG)
     [spots_405, quality, I_log] = log_detector_3d_Sage(temp_channel_405, 3, 3, mean(temp_channel_405(:))/5);
@@ -267,16 +267,22 @@ for file_iter = 1:length(filename_list)
     spots_405_3D = spots_405;
     spots_488_3D = spots_488;
 
-    save(fullfile(output_path, [filename_base, '.mat']), "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
-
     foci_result = struct();
     %% dealing with foci channel
 
     img = img_series_max(:, :, 1, 1);
-    [spots_405, quality] = log_detector_fft(img, 3, 0, nucleus_mask);
-    id = abs(spots_405(:, 1)-spots_405_3D(1))<3 & abs(spots_405(:, 2)-spots_405_3D(2))<3;
-    spots_405 = spots_405(id, :); quality = quality(id);
-    [~, i] = max(quality); spots_405 = spots_405(i, :);
+    try
+        nucleus_mask = NucleusMask2(mean(img_stack_reconv(:, :, :, 3), 3), 15);
+        spots_405 = findMatchedSpot2D(img, nucleus_mask, spots_405_3D);
+    catch ME_channel3_mask
+        warning('NucleusMask:Channel3Mismatch', ...
+            'Channel 3 nucleus mask failed to locate the 405 spot for %s. Trying channel 1. Error: %s', ...
+            filename, ME_channel3_mask.message);
+        nucleus_mask = NucleusMask2(mean(img_stack_reconv(:, :, :, 1), 3), 15);
+        spots_405 = findMatchedSpot2D(img, nucleus_mask, spots_405_3D);
+    end
+
+    save(fullfile(output_path, [filename_base, '.mat']), "img_series_max", "nucleus_mask", "resize_factor", "channel_labels", "pixelSize");
 
     img = img_series_max(:, :, 1, 2);
     [spots_488, quality] = log_detector_fft(img, 3, 0, nucleus_mask);
@@ -574,6 +580,13 @@ hold off
 print(fig, fullfile(output_path, [filename_base, '.png']), '-dpng');
 
 close all;
+    catch ME
+        cleanupCellProcessingResources(r);
+        logCellProcessingError(error_log_path, filename, ME);
+        warning('CellProcessing:Failed', ...
+            'Failed processing %s. Skipping to next cell. See %s.', filename, error_log_path);
+        continue
+    end
 end
 end
 end
@@ -1034,3 +1047,4 @@ set(gca,'Box','off','TickDir','out','LineWidth',1.2,'FontSize',12)
 
 legend([s1 s2 s3], {[dna,'(ON)'],'RNA(ON)',[dna,'(OFF)']}, ...
        'Location','northwest','Box','off')
+
