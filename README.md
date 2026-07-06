@@ -1,8 +1,6 @@
 # Condensate-quant
 
-Code collection for detecting, segmenting, and quantifying biomolecular condensates in live-cell super-resolution microscopy images. The repository includes workflows for multi-channel chromatic alignment, Noise2Void self-supervised denoising, Richardson-Lucy deconvolution, HMRF-based condensate segmentation, foci-to-condensate spatial analysis, and downstream visualization.
-
-The scripts in this repository are associated with the paper **Coordinated dynamics of condensates and enhancer-promoter looping revealed by live-cell imaging**.
+Code collection for detecting, segmenting, and quantifying biomolecular condensates in live-cell super-resolution microscopy images. The repository includes workflows for multi-channel chromatic alignment, Noise2Void self-supervised denoising, Richardson-Lucy deconvolution, HMRF-based condensate segmentation and visualization.
 
 ## Repository Structure
 
@@ -18,32 +16,24 @@ Condensate-quant/
   Step0_channel_alignment/               # Multi-channel chromatic alignment
   Step1_pytorch-noise2void/              # PyTorch Noise2Void training and testing
   Step2_deconvolution-segmentation/      # Denoising, deconvolution, segmentation, and quantification
-  Step3_downstream_analysis/             # Experiment-specific downstream spatial analysis
 ```
 
 ## Workflow Overview
 
-The analysis workflow contains four main steps:
+The analysis workflow contains three main steps:
 
 1. `Step0_channel_alignment/`
    - Estimate geometric transformation matrices between fluorescence channels using bead calibration data.
    - Apply chromatic correction to ND2 or batch image datasets through a MATLAB App.
-
 2. `Step1_pytorch-noise2void/`
    - Train a Noise2Void-style self-supervised denoising model using PyTorch.
    - Save PyTorch checkpoints and export ONNX models for MATLAB inference.
-
 3. `Step2_deconvolution-segmentation/`
    - Read OME-TIFF time-series image stacks.
    - Apply sliding-window denoising using a pre-trained ONNX Noise2Void model.
    - Perform Richardson-Lucy deconvolution using experimentally measured PSFs.
    - Generate nucleus masks and identify condensate regions using HMRF segmentation.
    - Export condensate masks, centers, boundaries, interfaces, and time-resolved morphometric measurements.
-
-4. `Step3_downstream_analysis/`
-   - Run experiment-specific downstream analysis for RNA, DNA, enhancer/promoter, and condensate imaging assays.
-   - Detect DNA/RNA foci, extract local ROIs around foci, segment OCT4/BRD4 condensates, and calculate distances from foci to condensate boundary, interface, centroid, and center.
-   - Generate summary matrices and visualization panels including scatter plots and density contours.
 
 ## Requirements
 
@@ -89,14 +79,10 @@ This avoids common multiprocessing issues during data loading.
 
 ## Data
 
-Example data, raw data information, and organized downstream data templates are listed under the corresponding analysis folders, for example:
+Example and raw data information is listed in `DataSource.txt` files under the corresponding analysis folders, for example:
 
 ```text
 Step2_deconvolution-segmentation/DataSource.txt
-Step3_downstream_analysis/3color-RNA-2Condensate/DataSource.txt
-Step3_downstream_analysis/4color-DNA-RNA-2Condensate/*/DataSource.txt
-Step3_downstream_analysis/4color-Promoter-RNA-Enhancer-Condensate/*/DataSource.txt
-Step3_downstream_analysis/3color-Promoter_RNA_SCR/
 ```
 
 The current data source points to the Zenodo DOI:
@@ -105,7 +91,7 @@ The current data source points to the Zenodo DOI:
 10.5281/zenodo.18548898
 ```
 
-`Step2_deconvolution-segmentation/` and `Step3_downstream_analysis/3color-RNA-2Condensate/` contain example inputs and generated outputs, which can be used to inspect expected file naming and output organization.
+`Step2_deconvolution-segmentation/` contain example inputs and generated outputs, which can be used to inspect expected file naming and output organization.
 
 ## Step 0: Multi-Channel Chromatic Alignment
 
@@ -162,10 +148,10 @@ Modify the dataset path and training parameters in `train_pipeline.py`:
 
 ```python
 datasets_path = 'your/training/tif/folder'
-GPU = '0'
-patch_xy = 128
-patch_t = 8
-pth_dir = './pth'
+GPU = '0' # the index of GPU used for computation (e.g. '0', '0,1', '0,1,2')
+patch_xy = 128 # the width and height of 3D patches
+patch_t = 8 # the time dimension of 3D patches
+pth_dir = './pth' # pth file and visualization result file path
 ```
 
 Then run:
@@ -237,10 +223,11 @@ Open `denoise_deconv_condensate_2D_time_series_HMRF_boundary.m` and update the f
 onnx_path = '../onnx/N2V_3D_OCT4_BRD4_liveSR_125_8_E10_xy3z0.onnx';
 psf_SR_560 = TIFFreader('../PSF/psf_SR_channel561_2D.tif', 'double');
 filepath_list = {'path/to/your/tif/folder/'};
-pixelSize = 95;
-resize_factor = 10;
-min_radius = 50;
-min_partition_coefficient = 1.2;
+pixelSize = 95; % Physical pixel size in nanometers (nm)
+resize_factor = 10; % Sub-pixel interpolation factor for morphological precision
+min_radius = 50; % minimal condensate radius (nm)
+min_partition_coefficient = 1.25;   % minimal condensate enrichment level
+seg_point = 5;% Threshold for condensate class, above this will be considered as condensates
 ```
 
 Then run the script in MATLAB.
@@ -273,202 +260,9 @@ area
 
 The second half of the main MATLAB script includes statistical analysis and visualization of condensate number, area, and radius over time. If preprocessing results are already available as `.mat` files, the statistics section can be run independently without repeating denoising, deconvolution, and segmentation.
 
-## Step 3: Downstream Analysis
-
-Directory:
-
-```text
-Step3_downstream_analysis/
-```
-
-Step 3 contains experiment-specific MATLAB scripts for measuring spatial relationships between DNA/RNA foci and OCT4/BRD4 condensates. These scripts reuse the denoising, deconvolution, HMRF segmentation, ROI extraction, and distance-measurement functions from `Function/`.
-
-### Subfolders
-
-```text
-Step3_downstream_analysis/
-  3color-RNA-2Condensate/
-  4color-DNA-RNA-2Condensate/
-  4color-Promoter-RNA-Enhancer-Condensate/
-  3color-Promoter_RNA_SCR/
-```
-
-### 3-Color RNA and Two-Condensate Analysis
-
-Directory:
-
-```text
-Step3_downstream_analysis/3color-RNA-2Condensate/
-```
-
-Main script:
-
-```text
-denoise_deconv_RNA_condensate_2D_HMRF_boundary.m
-```
-
-This workflow analyzes 3-color images containing RNA, OCT4, and BRD4 channels. It detects RNA foci, extracts local ROIs around RNA sites, segments OCT4 and BRD4 condensates using HMRF, and calculates distances between RNA foci and condensate boundaries and centroids.
-
-Expected channel labels:
-
-```text
-RNA, OCT4, BRD4
-```
-
-### 4-Color DNA/RNA and Two-Condensate Analysis
-
-Directory:
-
-```text
-Step3_downstream_analysis/4color-DNA-RNA-2Condensate/
-```
-
-Main script:
-
-```text
-denoise_deconv_foci_condensate_average_HMRF_boundary.m
-```
-
-This workflow analyzes 4-color images containing DNA, RNA, OCT4, and BRD4 channels. It supports separate cell lists for RNA-positive and RNA-negative cells, detects DNA/RNA foci, segments OCT4 and BRD4 condensates, calculates foci-to-condensate spatial metrics, and generates scatter and contour visualizations.
-
-Expected subfolders:
-
-```text
-Promoter_RNA_OCT4_BRD4/
-SCR_RNA_OCT4_BRD4/
-```
-
-Each subfolder should contain:
-
-```text
-Cell_with_RNA.txt
-Cell_without_RNA.txt
-Imaging_data.tif
-```
-
-### 4-Color Promoter/RNA/Enhancer and Single-Condensate Analysis
-
-Directory:
-
-```text
-Step3_downstream_analysis/4color-Promoter-RNA-Enhancer-Condensate/
-```
-
-Main script:
-
-```text
-denoise_deconv_PRE_condensate_averaged_HMRF_boundary.m
-```
-
-This workflow analyzes 4-color images containing promoter, RNA, enhancer/SCR, and one condensate channel. It extracts promoter/RNA/enhancer foci, segments the selected OCT4 or BRD4 condensate channel, calculates distances from each foci type to condensate boundaries and centroids, and summarizes promoter-RNA-enhancer geometry.
-
-Expected subfolders:
-
-```text
-Promoter_RNA_SCR_BRD4/
-Promoter_RNA_SCR_OCT4/
-```
-
-Each subfolder should contain:
-
-```text
-Cell_with_RNA.txt
-Cell_without_RNA.txt
-Imaging_data.tif
-```
-
-### 3-Color Promoter/RNA/Enhancer Distance Analysis
-
-Directory:
-
-```text
-Step3_downstream_analysis/3color-Promoter_RNA_SCR/
-```
-
-Main script:
-
-```text
-denoise_deconv_PRE_distance.m
-```
-
-This workflow analyzes 3-color LiveSR images containing promoter, RNA, and enhancer/SCR channels. It denoises and deconvolves the image stacks, detects promoter/RNA/enhancer foci, extracts local ROIs around foci, and calculates promoter-enhancer distances for RNA-positive and RNA-negative cells.
-
-Expected channel labels:
-
-```text
-Promoter, RNA, Enhancer
-```
-
-Each subfolder should contain:
-
-```text
-Cell_with_RNA.txt
-Cell_without_RNA.txt
-Imaging_data.tif
-```
-
-`Cell_with_RNA.txt` and `Cell_without_RNA.txt` should list the organized ON/OFF raw image filenames. `zstep_sheet.csv` should contain one row per processed `.mat` file, with at least the columns `name` and `Var2`, where `Var2` is the z-step size in nm used for 3D distance calculation.
-
-### Step 3 Outputs
-
-Depending on the workflow, outputs may include:
-
-```text
-*-denoised.ome.tif
-*-denoised-deconv.ome.tif
-*-RNA.tif
-*-DNA.tif
-*-Promoter.tif
-*-Enhancer.tif
-*-Condensate.tif
-*-Center-roi.tif
-*-roi.tif
-*-roi-bicubic.tif
-*-HMRFseg.png
-*-CDmask.tif
-*-CDcenter.tif
-*-CDinterface.tif
-*-CDboundary.tif
-*.mat
-*.png
-Cell_analysis_errors.txt
-```
-
-The output `.mat` files typically store:
-
-```text
-foci_result
-condensate_result
-img_series_max
-nucleus_mask
-roi_window
-channel_labels
-pixelSize
-resize_factor
-dist_summary_withRNA
-dist_summary_woRNA
-epdist_rna_on
-epdist_rna_off
-```
-
-### Parameters to Check Before Running
-
-Before running Step 3 scripts, verify:
-
-- The script is launched from its own Step 3 subfolder, or relative paths are updated accordingly.
-- `onnx_path` points to the correct Noise2Void ONNX model.
-- PSF paths match the imaging mode and channel order.
-- `filepath_list` points to the intended experiment folders.
-- `Cell_with_RNA.txt` and `Cell_without_RNA.txt` contain valid image filenames.
-- `channel_labels` match the actual image channel order.
-- `pixelSize`, `resize_factor`, `roi_width`, `nclust`, and `seg_point` are appropriate for the dataset.
-- `min_radius` and `min_partition_coefficient` are appropriate for condensate filtering. The current Step 3 defaults are `min_radius = 50` nm and `min_partition_coefficient = 1.2`.
-
 ## Notes
 
 - Several scripts contain example relative or absolute paths. Update them to match your local data paths before running.
-- Step 3 batch-processing scripts write `Cell_analysis_errors.txt` in each output directory when an individual cell fails; failed cells are skipped so the remaining cells can continue processing.
-- Step 3 scripts are experiment-specific and are best treated as analysis templates. Check channel order, z-layer selection logic, and foci-matching thresholds before applying them to a new dataset.
 - On Windows, set `num_workers = 0` in the Python scripts.
 - If GPU inference is unavailable in MATLAB, set:
 
@@ -481,12 +275,8 @@ is_GPU_avaliable = false;
 
 ## Citation
 
-If you use this code, please cite the corresponding paper:
-
-**Coordinated dynamics of condensates and enhancer-promoter looping revealed by live-cell imaging**
-
 For questions, contact:
 
 ```text
-wangbo@stu.pku.edu.cn
+wdeng@pku.edu.cn
 ```

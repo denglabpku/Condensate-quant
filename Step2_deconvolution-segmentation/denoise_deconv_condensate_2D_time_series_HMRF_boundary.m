@@ -13,7 +13,7 @@
 clc;close all;clear;
 
 %% 1. DENOISING & DECONVOLUTION CONFIGURATION
-script_dir = fileparts(mfilename('fullpath'));
+script_dir = pwd;
 repo_root = fullfile(script_dir, '..');
 addpath(genpath(fullfile(repo_root, 'Function')));
 
@@ -171,6 +171,7 @@ for file_iter = 1:length(filename_list)
     CDinterface = CDcenter; CDboundary = CDcenter; CDmask = CDboundary;
     labels = uint16(CDcenter);
     area = cell(numberOfPages, 1);
+    enrichment = cell(numberOfPages, 1);
     
     nucleus_mask_resize = imresize(nucleus_mask, resize_factor, "nearest");
     for frame_iter = 1:numberOfPages
@@ -215,6 +216,7 @@ for file_iter = 1:length(filename_list)
         value_counts = [C, a_counts];
         value_counts = value_counts(C>0, :);
         area{frame_iter, 1} = value_counts(:, 2);
+        enrichment{frame_iter, 1} = calculateSingleCondensateEnrichment(temp_labels, temp_img, pixelSize, resize_factor);
     
         % export HMRF segmentation
         if frame_iter == 1
@@ -257,6 +259,7 @@ for file_iter = 1:length(filename_list)
     condensate_result.CDmask = CDmask;
     condensate_result.labels = labels;
     condensate_result.area = area;
+    condensate_result.enrichment = enrichment;
     
     % important parameter: condensate_result
     save(fullfile(output_path, [filename_base, '.mat']), "condensate_result", '-append');
@@ -294,13 +297,27 @@ for filepath_iter = 1:2
     condensate_num_over_time = zeros(numberOfPages, length(filename_list));
     condensate_area_over_time = cell(numberOfPages, length(filename_list));
     mean_condensate_area_over_time = zeros(numberOfPages, length(filename_list));
+    condensate_enrichment_over_time = cell(numberOfPages, length(filename_list));
+    mean_PC_mean_over_time = nan(numberOfPages, length(filename_list));
+    mean_PC_max_over_time = nan(numberOfPages, length(filename_list));
     area_in_total = [];
+    PC_mean_in_total = [];
+    PC_max_in_total = [];
     
     for file_iter = 1:length(filename_list)
     
         filename = filename_list(file_iter).name;
         disp(['Processing ', filename, ' ...']);
-        load(fullfile(filepath, filename), "condensate_result");
+        loaded_result = load(fullfile(filepath, filename), "condensate_result");
+        condensate_result = loaded_result.condensate_result;
+        has_enrichment = isfield(condensate_result, 'enrichment');
+        if ~has_enrichment
+            loaded_img = load(fullfile(filepath, filename), "img_stack_deconv");
+            if ~isfield(loaded_img, 'img_stack_deconv')
+                error('Missing img_stack_deconv in %s. Re-run segmentation before calculating enrichment.', filename);
+            end
+            img_stack_deconv = loaded_img.img_stack_deconv;
+        end
     
         for frame_iter = 1:numberOfPages
     
@@ -308,8 +325,25 @@ for filepath_iter = 1:2
             temp_area = temp_area(temp_area>=area_cutoff);
             condensate_num_over_time(frame_iter, file_iter) = length(temp_area);
             condensate_area_over_time{frame_iter, file_iter} = temp_area*(pixelSize/resize_factor)^2;
+            if has_enrichment
+                temp_enrichment = condensate_result.enrichment{frame_iter, 1};
+            else
+                temp_enrichment = calculateSingleCondensateEnrichment(condensate_result.labels(:, :, frame_iter), img_stack_deconv(:, :, frame_iter), pixelSize, resize_factor);
+            end
+            condensate_enrichment_over_time{frame_iter, file_iter} = temp_enrichment;
+            if ~isempty(temp_enrichment)
+                temp_PC_mean = [temp_enrichment.PC_mean]';
+                temp_PC_max = [temp_enrichment.PC_max]';
+                mean_PC_mean_over_time(frame_iter, file_iter) = mean(temp_PC_mean, 'omitnan');
+                mean_PC_max_over_time(frame_iter, file_iter) = mean(temp_PC_max, 'omitnan');
+            else
+                temp_PC_mean = [];
+                temp_PC_max = [];
+            end
             if frame_iter == 20
                 area_in_total = [area_in_total; temp_area*(pixelSize/resize_factor)^2];
+                PC_mean_in_total = [PC_mean_in_total; temp_PC_mean];
+                PC_max_in_total = [PC_max_in_total; temp_PC_max];
             end
             mean_condensate_area_over_time(frame_iter, file_iter) = mean(temp_area)*(pixelSize/resize_factor)^2;
     
@@ -324,6 +358,11 @@ for filepath_iter = 1:2
     condensate_statistics(filepath_iter).mean_area_over_time = mean_condensate_area_over_time;
     condensate_statistics(filepath_iter).area_in_total = area_in_total;
     condensate_statistics(filepath_iter).radius = sqrt(condensate_statistics(filepath_iter).area_in_total/pi);
+    condensate_statistics(filepath_iter).enrichment_over_time = condensate_enrichment_over_time;
+    condensate_statistics(filepath_iter).mean_PC_mean_over_time = mean_PC_mean_over_time;
+    condensate_statistics(filepath_iter).mean_PC_max_over_time = mean_PC_max_over_time;
+    condensate_statistics(filepath_iter).PC_mean_in_total = PC_mean_in_total;
+    condensate_statistics(filepath_iter).PC_max_in_total = PC_max_in_total;
 
 end
 
@@ -353,3 +392,51 @@ hold off
 xlim([1, numberOfPages]);
 ylabel('average CD radius per cell');
 ylim([0, 300])
+function enrichment_stats = calculateSingleCondensateEnrichment(labels, img, pixelSize, resize_factor)
+
+label_ids = unique(labels);
+label_ids(label_ids == 0) = [];
+
+pixel_area_nm2 = (pixelSize/resize_factor)^2;
+enrichment_stats = struct('label', {}, 'area_pixel', {}, 'area_nm2', {}, 'radius_nm', {}, ...
+                          'mean_inside', {}, 'mean_outside', {}, 'max_inside', {}, ...
+                          'PC_mean', {}, 'PC_max', {});
+
+for i = 1:length(label_ids)
+
+    id = label_ids(i);
+    mask = labels == id;
+    area_pixel = sum(mask(:));
+
+    mask_dilate1 = imdilate(mask, strel('disk', 2*resize_factor));
+    mask_dilate2 = imdilate(mask, strel('disk', 3*resize_factor));
+    outside = mask_dilate2 & ~mask_dilate1 & labels == 0;
+
+    inside_val = double(img(mask));
+    outside_val = double(img(outside));
+
+    mean_inside = mean(inside_val, 'omitnan');
+    max_inside = max(inside_val);
+    mean_outside = mean(outside_val, 'omitnan');
+
+    if isempty(outside_val) || mean_outside == 0 || isnan(mean_outside)
+        PC_mean = NaN;
+        PC_max = NaN;
+    else
+        PC_mean = mean_inside/mean_outside;
+        PC_max = max_inside/mean_outside;
+    end
+
+    enrichment_stats(end+1).label = id;
+    enrichment_stats(end).area_pixel = area_pixel;
+    enrichment_stats(end).area_nm2 = area_pixel*pixel_area_nm2;
+    enrichment_stats(end).radius_nm = sqrt(enrichment_stats(end).area_nm2/pi);
+    enrichment_stats(end).mean_inside = mean_inside;
+    enrichment_stats(end).mean_outside = mean_outside;
+    enrichment_stats(end).max_inside = max_inside;
+    enrichment_stats(end).PC_mean = PC_mean;
+    enrichment_stats(end).PC_max = PC_max;
+
+end
+
+end
